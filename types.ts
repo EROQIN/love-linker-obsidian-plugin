@@ -42,7 +42,7 @@ export const DEFAULT_SETTINGS: LoveLinkerSettings = {
   webdavContentDir: "milestones",
   webdavManifestFile: "manifest.json",
   localContentFolder: "milestones",
-  defaultExtension: "mdx",
+  defaultExtension: "md",
   defaultAccent: "coral",
   accentOptions: [
     "coral|珊瑚红",
@@ -53,6 +53,6 @@ export const DEFAULT_SETTINGS: LoveLinkerSettings = {
     "ink|墨黑",
     "paper|纸白"
   ],
-  defaultCoverUrl: "https://your-image-host/cover.svg",
+  defaultCoverUrl: "",
   manifestPreviewLimit: 10
 };

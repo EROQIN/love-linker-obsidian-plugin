@@ -50,7 +50,7 @@ export class PublishPanelView extends ItemView {
     fileButtons.createEl("button", { text: "新建文章" }).addEventListener("click", () => {
       this.plugin.openNewArticleModal();
     });
-    fileButtons.createEl("button", { text: "推送当前文章" }).addEventListener("click", () => {
+    fileButtons.createEl("button", { text: "推送/更新当前文章" }).addEventListener("click", () => {
       this.plugin.pushCurrentFile({
         progress: (message) => this.setProgress(message)
       });
@@ -72,7 +72,7 @@ export class PublishPanelView extends ItemView {
     this.manifestListEl = remoteSection.createEl("ul", { cls: "love-linker-manifest-list" });
 
     const progressSection = contentEl.createDiv({ cls: "love-linker-section" });
-    progressSection.createEl("h3", { text: "推送进度" });
+    progressSection.createEl("h3", { text: "推送/更新进度" });
     this.progressEl = progressSection.createDiv({ cls: "love-linker-status" });
     this.setProgress("等待操作");
 
@@ -89,7 +89,7 @@ export class PublishPanelView extends ItemView {
     const status = await this.plugin.getActiveFileStatus();
     this.validationEl.removeClass("love-linker-danger");
     if (!status.file) {
-      this.fileInfoEl.setText("未打开 Markdown/MDX 文件");
+      this.fileInfoEl.setText("未打开 Markdown 文件");
       this.validationEl.setText("打开文件后可检查 frontmatter。");
       return;
     }

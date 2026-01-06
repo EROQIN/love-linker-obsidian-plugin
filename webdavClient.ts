@@ -76,6 +76,41 @@ export class WebDavClient {
     }
   }
 
+  async checkConnection() {
+    const url = this.buildUrl([]);
+    const response = await requestUrl({
+      url,
+      method: "PROPFIND",
+      headers: {
+        Authorization: this.getAuthHeader(),
+        Depth: "0"
+      }
+    });
+
+    if (response.status < 200 || response.status >= 300) {
+      throw new WebDavError(`WebDAV 连接失败 (${response.status})`, response.status);
+    }
+  }
+
+  async ensureDirectory(pathParts: string[]) {
+    const url = this.buildUrl(pathParts);
+    const response = await requestUrl({
+      url,
+      method: "MKCOL",
+      headers: {
+        Authorization: this.getAuthHeader()
+      }
+    });
+
+    if (response.status === 405 || response.status === 301) {
+      return;
+    }
+    if (response.status >= 200 && response.status < 300) {
+      return;
+    }
+    throw new WebDavError(`WebDAV 目录创建失败 (${response.status})`, response.status);
+  }
+
   async putText(pathParts: string[], text: string, contentType: string) {
     const url = this.buildUrl(pathParts);
     const response = await requestUrl({

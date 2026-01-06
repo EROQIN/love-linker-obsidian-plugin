@@ -5,6 +5,7 @@ import { formatDate, isValidDate, parseTagsInput, slugify } from "./frontmatter"
 export type NewArticleFormData = {
   title: string;
   date: string;
+  fileName: string;
   place: string;
   accent: string;
   cover: string;
@@ -16,6 +17,7 @@ export type NewArticleFormData = {
 export class NewArticleModal extends Modal {
   private data: NewArticleFormData;
   private fileNamePreviewEl?: HTMLDivElement;
+  private defaultFileNameBase: string;
 
   constructor(
     app: App,
@@ -28,9 +30,11 @@ export class NewArticleModal extends Modal {
     }
   ) {
     super(app);
+    const defaultDate = formatDate(new Date());
     this.data = {
       title: "",
-      date: formatDate(new Date()),
+      date: defaultDate,
+      fileName: "",
       place: "",
       accent: options.defaultAccent,
       cover: options.defaultCover,
@@ -38,6 +42,8 @@ export class NewArticleModal extends Modal {
       tags: [],
       visibility: "public"
     };
+    this.defaultFileNameBase = this.buildDefaultFileNameBase(defaultDate);
+    this.data.fileName = this.defaultFileNameBase;
   }
 
   onOpen() {
@@ -47,7 +53,7 @@ export class NewArticleModal extends Modal {
 
     new Setting(contentEl)
       .setName("标题")
-      .setDesc("将用于页面标题与文件名 slug")
+      .setDesc("将用于页面标题")
       .addText((text) => {
         text.setPlaceholder("例如：第一次远行")
           .setValue(this.data.title)
@@ -64,8 +70,25 @@ export class NewArticleModal extends Modal {
         text.inputEl.type = "date";
         text.setValue(this.data.date).onChange((value) => {
           this.data.date = value.trim();
+          const nextDefault = this.buildDefaultFileNameBase(this.data.date);
+          if (this.data.fileName.trim() === this.defaultFileNameBase) {
+            this.defaultFileNameBase = nextDefault;
+            this.data.fileName = nextDefault;
+          }
           this.updateFileNamePreview();
         });
+      });
+
+    new Setting(contentEl)
+      .setName("文件名")
+      .setDesc("可自定义，不会随标题自动变化")
+      .addText((text) => {
+        text.setPlaceholder(this.defaultFileNameBase)
+          .setValue(this.data.fileName)
+          .onChange((value) => {
+            this.data.fileName = value.trim();
+            this.updateFileNamePreview();
+          });
       });
 
     new Setting(contentEl)
@@ -106,7 +129,7 @@ export class NewArticleModal extends Modal {
 
     new Setting(contentEl)
       .setName("摘要 (excerpt)")
-      .setDesc("首页卡片文案，必填")
+      .setDesc("首页卡片文案，可留空")
       .addTextArea((textarea) => {
         textarea.inputEl.rows = 3;
         textarea.setPlaceholder("写一句简短引言")
@@ -146,19 +169,6 @@ export class NewArticleModal extends Modal {
     const cancelButton = buttonRow.createEl("button", { text: "取消" });
 
     createButton.addEventListener("click", async () => {
-      if (!this.data.title) {
-        new Notice("请填写标题。", 3000);
-        return;
-      }
-      if (!this.data.date || !isValidDate(this.data.date)) {
-        new Notice("日期格式必须为 YYYY-MM-DD，且是有效日期。", 4000);
-        return;
-      }
-      if (!this.data.excerpt) {
-        new Notice("摘要（excerpt）为必填字段。", 3000);
-        return;
-      }
-
       const result = await this.options.onSubmit(this.data);
       if (result !== false) {
         this.close();
@@ -170,10 +180,20 @@ export class NewArticleModal extends Modal {
 
   private updateFileNamePreview() {
     if (!this.fileNamePreviewEl) return;
-    const slug = slugify(this.data.title || "milestone");
-    const date = this.data.date || formatDate(new Date());
-    const fileName = `${date}-${slug}.${this.options.defaultExtension}`;
-    this.fileNamePreviewEl.setText(`文件名预览：${fileName}`);
+    this.fileNamePreviewEl.setText(`文件名预览：${this.resolveFileName()}`);
+  }
+
+  private resolveFileName() {
+    const raw = this.data.fileName.trim() || this.defaultFileNameBase;
+    if (raw.endsWith(`.${this.options.defaultExtension}`) || raw.includes(".")) {
+      return raw;
+    }
+    return `${raw}.${this.options.defaultExtension}`;
+  }
+
+  private buildDefaultFileNameBase(dateValue: string) {
+    const date = isValidDate(dateValue) ? dateValue : formatDate(new Date());
+    return `${date}-${slugify("milestone")}`;
   }
 }
 
@@ -266,7 +286,7 @@ export class SlugInputModal extends Modal {
 
     new Setting(advancedContainer)
       .setName("自定义远端文件名")
-      .setDesc("例如：my-post.mdx，不填则使用 slug")
+      .setDesc("例如：my-post.md，不填则使用 slug")
       .addText((text) => {
         text.setPlaceholder(`${this.slugValue}.${this.options.extension}`)
           .setValue(this.fileNameValue)

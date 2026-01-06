@@ -111,9 +111,8 @@ export class LoveLinkerSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("默认扩展名")
-      .setDesc("新建文件时使用 .md 或 .mdx")
+      .setDesc("新建文件时使用 .md")
       .addDropdown((dropdown) => {
-        dropdown.addOption("mdx", ".mdx");
         dropdown.addOption("md", ".md");
         dropdown.setValue(this.plugin.settings.defaultExtension).onChange(async (value: "md" | "mdx") => {
           this.plugin.settings.defaultExtension = value;
@@ -165,7 +164,7 @@ export class LoveLinkerSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("测试连接")
-      .setDesc("点击后尝试读取远端 manifest.json")
+      .setDesc("点击后检测 WebDAV 是否可连接")
       .addButton((button) => {
         button.setButtonText("测试连接").onClick(async () => {
           await this.plugin.testConnection();

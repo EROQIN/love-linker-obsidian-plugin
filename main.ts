@@ -8,15 +8,16 @@ import {
 import { LoveLinkerSettingTab } from "./settings";
 import { DEFAULT_SETTINGS, type AccentOption, type LoveLinkerSettings } from "./types";
 import {
+  formatDate,
   buildFrontmatterTemplate,
   getFrontmatterEndLine,
+  isValidDate,
   parseFrontmatterBlock,
   slugify,
   suggestSlugFromFilename
 } from "./frontmatter";
 import { validateFrontmatter } from "./validation";
 import {
-  ConfirmModal,
   NewArticleModal,
   SlugConflictModal,
   SlugInputModal,
@@ -62,8 +63,14 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
 
     this.addCommand({
       id: "love-linker-push-current",
-      name: "推送当前文档到 WebDAV",
+      name: "推送/更新当前文档到 WebDAV",
       callback: () => this.pushCurrentFile()
+    });
+
+    this.addCommand({
+      id: "love-linker-add-frontmatter",
+      name: "补全当前文档 frontmatter",
+      callback: () => this.addFrontmatterFieldsToCurrentFile()
     });
 
     this.registerEvent(
@@ -71,7 +78,7 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
         if (file instanceof TFile && this.isMarkdownFile(file)) {
           menu.addItem((item) => {
             item
-              .setTitle("推送到 WebDAV")
+              .setTitle("推送/更新到 WebDAV")
               .setIcon("paper-plane")
               .onClick(() => this.pushCurrentFile({ file }));
           });
@@ -101,6 +108,12 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
 
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    if (this.settings.defaultExtension !== "md") {
+      this.settings.defaultExtension = "md";
+    }
+    if (this.settings.defaultCoverUrl === "https://your-image-host/cover.svg") {
+      this.settings.defaultCoverUrl = "";
+    }
   }
 
   async saveSettings() {
@@ -116,12 +129,13 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
   }
 
   async activatePublishView() {
-    const leaf = this.app.workspace.getRightLeaf(false);
+    const leaf = this.app.workspace.getRightLeaf(true);
     if (!leaf) {
       new Notice("无法打开侧边栏，请检查工作区布局。", 3000);
       return;
     }
     await leaf.setViewState({ type: VIEW_TYPE, active: true });
+    this.app.workspace.revealLeaf(leaf);
     this.publishView = leaf.view as PublishPanelView;
     this.publishView?.refresh();
   }
@@ -155,7 +169,7 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
     const modal = new NewArticleModal(this.app, {
       accentOptions: this.getAccentOptions(),
       defaultAccent: this.settings.defaultAccent,
-      defaultCover: this.settings.defaultCoverUrl || "https://your-image-host/cover.svg",
+      defaultCover: this.settings.defaultCoverUrl,
       defaultExtension: this.settings.defaultExtension,
       onSubmit: async (data) => this.createNewArticle(data)
     });
@@ -164,12 +178,13 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
 
   async createNewArticle(data: NewArticleFormData) {
     const folder = this.settings.localContentFolder.trim() || "milestones";
-    const slug = slugify(data.title);
-    const fileName = `${data.date}-${slug}.${this.settings.defaultExtension}`;
+    const date = isValidDate(data.date) ? data.date : formatDate(new Date());
+    const fileName = this.resolveNewFileName(data.fileName, date);
+    if (!fileName) return false;
     const filePath = normalizePath(`${folder}/${fileName}`);
 
     if (this.app.vault.getAbstractFileByPath(filePath)) {
-      new Notice("文件已存在，请修改标题或日期。", 4000);
+      new Notice("文件已存在，请修改文件名。", 4000);
       return false;
     }
 
@@ -177,7 +192,7 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
 
     const content = buildFrontmatterTemplate({
       title: data.title,
-      date: data.date,
+      date,
       place: data.place,
       accent: data.accent,
       cover: data.cover || this.settings.defaultCoverUrl,
@@ -208,7 +223,7 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
     const file = options?.file ?? this.app.workspace.getActiveFile();
 
     if (!file || !this.isMarkdownFile(file)) {
-      new Notice("请先打开一个 Markdown/MDX 文件。", 3000);
+      new Notice("请先打开一个 Markdown 文件。", 3000);
       return;
     }
 
@@ -251,8 +266,12 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
       await this.saveFileIfOpen(file);
     }
 
+    progress("正在确认远端目录...");
+    const folderReady = await this.ensureRemoteContentDir();
+    if (!folderReady) return;
+
     progress("正在拉取 manifest...");
-    const manifest = await this.fetchManifestWithPrompt();
+    const manifest = await this.fetchManifest();
     if (!manifest) return;
 
     const resolved = await this.applySlugToManifest(manifest.items, slugResult, extension);
@@ -302,16 +321,17 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
       return;
     }
 
-    progress("推送完成");
+    progress("正在写入 slug...");
+    await this.updateSlug(file, slugResult.slug);
+    await this.saveFileIfOpen(file);
+
+    progress("推送/更新完成");
     this.publishView?.loadManifestPreview();
   }
 
   async testConnection() {
     try {
-      await this.webdav.getText([
-        this.settings.webdavContentDir,
-        this.settings.webdavManifestFile
-      ]);
+      await this.webdav.checkConnection();
       new Notice("连接成功。", 3000);
       return true;
     } catch (error) {
@@ -395,10 +415,14 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
 
   private isMarkdownFile(file: TFile) {
     const ext = file.extension.toLowerCase();
-    return ext === "md" || ext === "mdx";
+    return ext === "md";
   }
 
   private suggestSlug(file: TFile, frontmatter: Record<string, unknown>) {
+    const frontmatterSlug = frontmatter.slug ? String(frontmatter.slug).trim() : "";
+    if (frontmatterSlug) {
+      return frontmatterSlug;
+    }
     const base = suggestSlugFromFilename(file.basename);
     if (base && base !== file.basename) {
       return slugify(base);
@@ -425,19 +449,6 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
     });
   }
 
-  private async promptConfirm(title: string, message: string) {
-    return await new Promise<"confirm" | "cancel">((resolve) => {
-      const modal = new ConfirmModal(this.app, {
-        title,
-        message,
-        confirmText: "是",
-        cancelText: "否",
-        onResolve: resolve
-      });
-      modal.open();
-    });
-  }
-
   private async promptConflict(slug: string, existingFile: string) {
     return await new Promise<ConflictChoice>((resolve) => {
       const modal = new SlugConflictModal(this.app, {
@@ -449,7 +460,7 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
     });
   }
 
-  private async fetchManifestWithPrompt(): Promise<ManifestPayload | null> {
+  private async fetchManifest(): Promise<ManifestPayload | null> {
     try {
       const payload = await this.webdav.getJson<ManifestPayload>([
         this.settings.webdavContentDir,
@@ -458,14 +469,8 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
       return { items: this.normalizeManifestItems(payload.items) };
     } catch (error) {
       if (error instanceof WebDavError && error.status === 404) {
-        const choice = await this.promptConfirm(
-          "未找到 manifest",
-          "远端未找到 manifest.json，是否创建新的 manifest？"
-        );
-        if (choice === "confirm") {
-          return { items: [] };
-        }
-        return null;
+        new Notice("未找到 manifest.json，将在首次推送时自动创建。", 4000);
+        return { items: [] };
       }
       new Notice(this.formatWebDavError(error, "读取 manifest"), 5000);
       return null;
@@ -524,13 +529,77 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
     });
   }
 
+  private async updateSlug(file: TFile, slug: string) {
+    await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+      frontmatter.slug = slug;
+    });
+  }
+
+  private async addFrontmatterFieldsToCurrentFile() {
+    const file = this.app.workspace.getActiveFile();
+    if (!file || !this.isMarkdownFile(file)) {
+      new Notice("请先打开一个 Markdown 文件。", 3000);
+      return;
+    }
+
+    await this.saveFileIfOpen(file);
+    const today = formatDate(new Date());
+
+    await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+      if (frontmatter.title == null) frontmatter.title = "";
+      if (!isValidDate(String(frontmatter.date ?? ""))) frontmatter.date = today;
+      if (frontmatter.place == null) frontmatter.place = "";
+      if (frontmatter.accent == null) frontmatter.accent = "";
+      if (frontmatter.cover == null) frontmatter.cover = "";
+      if (frontmatter.excerpt == null) frontmatter.excerpt = "";
+      if (frontmatter.tags == null) frontmatter.tags = [];
+      if (!String(frontmatter.visibility ?? "").trim()) frontmatter.visibility = "public";
+    });
+
+    await this.saveFileIfOpen(file);
+    new Notice("已补全 frontmatter 字段。", 3000);
+    this.publishView?.refreshFileStatus();
+  }
+
+  private resolveNewFileName(raw: string, date: string) {
+    const trimmed = raw.trim();
+    const fallbackBase = `${date}-${slugify("milestone")}`;
+    const base = trimmed || fallbackBase;
+    if (/[\\/]/.test(base)) {
+      new Notice("文件名不能包含斜杠。", 3000);
+      return null;
+    }
+    if (base.endsWith(`.${this.settings.defaultExtension}`) || base.includes(".")) {
+      return base;
+    }
+    return `${base}.${this.settings.defaultExtension}`;
+  }
+
+  private async ensureRemoteContentDir() {
+    try {
+      const parts = this.settings.webdavContentDir
+        .split("/")
+        .map((part) => part.trim())
+        .filter(Boolean);
+      const path: string[] = [];
+      for (const part of parts) {
+        path.push(part);
+        await this.webdav.ensureDirectory(path);
+      }
+      return true;
+    } catch (error) {
+      new Notice(this.formatWebDavError(error, "创建远端目录"), 5000);
+      return false;
+    }
+  }
+
   private formatWebDavError(error: unknown, action: string) {
     if (error instanceof WebDavError) {
       if (error.status === 401 || error.status === 403) {
         return `${action}失败：鉴权失败，请检查用户名/密码。`;
       }
       if (error.status === 404) {
-        return `${action}失败：未找到 manifest.json。`;
+        return `${action}失败：远端资源不存在。`;
       }
       if (error.status) {
         return `${action}失败：HTTP ${error.status}`;
