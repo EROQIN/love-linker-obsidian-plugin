@@ -1,0 +1,49 @@
+.love-linker-panel {
+  padding: 12px;
+}
+
+.love-linker-section {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 12px;
+}
+
+.love-linker-section h3 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+}
+
+.love-linker-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.love-linker-muted {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.love-linker-status {
+  padding: 8px;
+  background: var(--background-secondary);
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.love-linker-warning {
+  color: var(--text-accent);
+}
+
+.love-linker-danger {
+  color: var(--text-error);
+}
+
+.love-linker-manifest-list {
+  margin: 6px 0 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+}

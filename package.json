@@ -1,0 +1,16 @@
+{
+  "name": "love-linker-publisher",
+  "version": "0.1.0",
+  "description": "Obsidian plugin to publish Love Linker milestones to WebDAV",
+  "main": "main.js",
+  "scripts": {
+    "build": "node esbuild.config.mjs production",
+    "dev": "node esbuild.config.mjs development --watch"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "esbuild": "^0.20.2",
+    "obsidian": "^1.5.12",
+    "typescript": "^5.3.3"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "id": "love-linker-publisher",
+  "name": "Love Linker Publisher",
+  "version": "0.1.0",
+  "minAppVersion": "1.4.0",
+  "description": "在 Obsidian 内创建并推送 Love Linker 里程碑到 WebDAV",
+  "author": "erokin",
+  "authorUrl": "",
+  "isDesktopOnly": false
+}
