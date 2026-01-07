@@ -48,9 +48,6 @@ const encodeBase64 = (value: string) => {
       )
     );
   }
-  if (typeof Buffer !== "undefined") {
-    return Buffer.from(value, "utf8").toString("base64");
-  }
   const bytes = encodeUtf8Bytes(value);
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
   let output = "";
@@ -66,6 +63,10 @@ const encodeBase64 = (value: string) => {
   }
   return output;
 };
+
+type RequestParams = Parameters<typeof requestUrl>[0];
+
+const REQUEST_TIMEOUT_MS = 10000;
 
 export class WebDavClient {
   constructor(private getSettings: () => LoveLinkerSettings) {}
@@ -93,9 +94,29 @@ export class WebDavClient {
     return `Basic ${token}`;
   }
 
+  private async request(params: RequestParams) {
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new WebDavError("请求超时。", 408));
+      }, REQUEST_TIMEOUT_MS);
+    });
+
+    try {
+      return await Promise.race([
+        requestUrl({ ...params, throw: false }),
+        timeoutPromise
+      ]);
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    }
+  }
+
   async getText(pathParts: string[]) {
     const url = this.buildUrl(pathParts);
-    const response = await requestUrl({
+    const response = await this.request({
       url,
       method: "GET",
       headers: {
@@ -121,7 +142,7 @@ export class WebDavClient {
 
   async checkConnection() {
     const url = this.buildUrl([]);
-    const response = await requestUrl({
+    const response = await this.request({
       url,
       method: "PROPFIND",
       headers: {
@@ -137,31 +158,26 @@ export class WebDavClient {
 
   async ensureDirectory(pathParts: string[]) {
     const url = this.buildUrl(pathParts);
+    const dirUrl = url.endsWith("/") ? url : `${url}/`;
     const authHeader = this.getAuthHeader();
-    const existsResponse = await requestUrl({
-      url,
+    const existsResponse = await this.request({
+      url: dirUrl,
       method: "PROPFIND",
       headers: {
         Authorization: authHeader,
         Depth: "0"
-      },
-      throw: false
+      }
     });
 
     if (existsResponse.status >= 200 && existsResponse.status < 300) {
       return;
     }
-    if (existsResponse.status === 401 || existsResponse.status === 403) {
-      throw new WebDavError(`WebDAV 目录访问失败 (${existsResponse.status})`, existsResponse.status);
-    }
-
-    const createResponse = await requestUrl({
-      url,
+    const createResponse = await this.request({
+      url: dirUrl,
       method: "MKCOL",
       headers: {
         Authorization: authHeader
-      },
-      throw: false
+      }
     });
 
     if (createResponse.status >= 200 && createResponse.status < 300) {
@@ -181,18 +197,53 @@ export class WebDavClient {
 
   async putText(pathParts: string[], text: string, contentType: string) {
     const url = this.buildUrl(pathParts);
-    const response = await requestUrl({
+    const bytes = encodeUtf8Bytes(text);
+    const body = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    const response = await this.request({
       url,
       method: "PUT",
-      body: text,
-      contentType,
+      body,
+      headers: {
+        Authorization: this.getAuthHeader(),
+        "Content-Type": contentType
+      }
+    });
+
+    if (response.status < 200 || response.status >= 300) {
+      throw new WebDavError(`WebDAV 上传失败 (${response.status})`, response.status);
+    }
+  }
+
+  async deleteFile(pathParts: string[]) {
+    const url = this.buildUrl(pathParts);
+    const response = await this.request({
+      url,
+      method: "DELETE",
       headers: {
         Authorization: this.getAuthHeader()
       }
     });
 
     if (response.status < 200 || response.status >= 300) {
-      throw new WebDavError(`WebDAV 上传失败 (${response.status})`, response.status);
+      throw new WebDavError(`WebDAV 删除失败 (${response.status})`, response.status);
+    }
+  }
+
+  async move(pathParts: string[], destinationParts: string[]) {
+    const url = this.buildUrl(pathParts);
+    const destination = this.buildUrl(destinationParts);
+    const response = await this.request({
+      url,
+      method: "MOVE",
+      headers: {
+        Authorization: this.getAuthHeader(),
+        Destination: destination,
+        Overwrite: "T"
+      }
+    });
+
+    if (response.status < 200 || response.status >= 300) {
+      throw new WebDavError(`WebDAV 移动失败 (${response.status})`, response.status);
     }
   }
 }

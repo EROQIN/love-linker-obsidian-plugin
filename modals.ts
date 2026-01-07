@@ -197,6 +197,84 @@ export class NewArticleModal extends Modal {
   }
 }
 
+export type FrontmatterRepairChange = {
+  key: string;
+  label: string;
+  value: string;
+  note?: string;
+  editable?: boolean;
+};
+
+export class FrontmatterRepairModal extends Modal {
+  private resolved = false;
+  private values: Record<string, string> = {};
+
+  constructor(
+    app: App,
+    private options: {
+      changes: FrontmatterRepairChange[];
+      onResolve: (choice: ConfirmChoice, values: Record<string, string>) => void;
+    }
+  ) {
+    super(app);
+    options.changes.forEach((change) => {
+      this.values[change.key] = change.value;
+    });
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl("h2", { text: "补全/修复 frontmatter" });
+    contentEl.createEl("p", { text: "将写入以下字段，确认后会直接保存到当前文档。" });
+
+    const list = contentEl.createDiv({ cls: "llp-repair-list" });
+
+    if (this.options.changes.length === 0) {
+      list.createDiv({ text: "当前文档无需修复。", cls: "love-linker-muted" });
+    }
+
+    this.options.changes.forEach((change) => {
+      const row = list.createDiv({ cls: "llp-repair-row" });
+      row.createDiv({ text: change.label, cls: "llp-repair-label" });
+
+      if (change.editable) {
+        const textarea = row.createEl("textarea", { cls: "llp-repair-input" });
+        textarea.value = change.value;
+        textarea.rows = 3;
+        textarea.addEventListener("input", () => {
+          this.values[change.key] = textarea.value.trim();
+        });
+      } else {
+        row.createDiv({ text: change.value || "（空）", cls: "llp-repair-value" });
+      }
+
+      if (change.note) {
+        row.createDiv({ text: change.note, cls: "love-linker-muted" });
+      }
+    });
+
+    const buttonRow = contentEl.createDiv({ cls: "love-linker-row" });
+    const confirmButton = buttonRow.createEl("button", { text: "应用修复" });
+    const cancelButton = buttonRow.createEl("button", { text: "取消" });
+
+    confirmButton.addEventListener("click", () => this.resolve("confirm"));
+    cancelButton.addEventListener("click", () => this.resolve("cancel"));
+  }
+
+  onClose() {
+    if (!this.resolved) {
+      this.options.onResolve("cancel", this.values);
+    }
+  }
+
+  private resolve(choice: ConfirmChoice) {
+    this.resolved = true;
+    this.options.onResolve(choice, this.values);
+    this.close();
+  }
+}
+
 export type SlugModalResult = {
   slug: string;
   fileName: string;
@@ -433,6 +511,212 @@ export class SlugConflictModal extends Modal {
   }
 
   private resolve(choice: ConflictChoice) {
+    this.resolved = true;
+    this.options.onResolve(choice);
+    this.close();
+  }
+}
+
+export class AccentSelectModal extends Modal {
+  private selected: string;
+
+  constructor(
+    app: App,
+    private options: {
+      options: AccentOption[];
+      current?: string;
+      onSubmit: (value: string) => void;
+    }
+  ) {
+    super(app);
+    this.selected = options.current ?? "";
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl("h2", { text: "选择文章主色 (accent)" });
+    contentEl.createEl("p", {
+      text: this.selected ? `当前：${this.selected}` : "当前未设置 accent。"
+    });
+
+    new Setting(contentEl)
+      .setName("Accent")
+      .setDesc("来自 love-linker 调色板，可在设置中扩展")
+      .addDropdown((dropdown) => {
+        const options = this.options.options;
+        const values = options.map((option) => option.value);
+        if (this.selected && !values.includes(this.selected)) {
+          dropdown.addOption(this.selected, `${this.selected}（当前）`);
+        }
+        options.forEach((option) => dropdown.addOption(option.value, option.label));
+        dropdown.setValue(this.selected || options[0]?.value || "").onChange((value) => {
+          this.selected = value;
+        });
+      });
+
+    const buttonRow = contentEl.createDiv({ cls: "love-linker-row" });
+    const confirmButton = buttonRow.createEl("button", { text: "保存" });
+    const cancelButton = buttonRow.createEl("button", { text: "取消" });
+
+    confirmButton.addEventListener("click", () => {
+      this.options.onSubmit(this.selected);
+      this.close();
+    });
+    cancelButton.addEventListener("click", () => this.close());
+  }
+}
+
+export class SlugPromptModal extends Modal {
+  private resolved = false;
+  private slugValue = "";
+
+  constructor(
+    app: App,
+    private options: {
+      title: string;
+      description: string;
+      defaultValue?: string;
+      onSubmit: (value: string | null) => void;
+    }
+  ) {
+    super(app);
+    this.slugValue = options.defaultValue?.trim() ?? "";
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl("h2", { text: this.options.title });
+    contentEl.createEl("p", { text: this.options.description });
+
+    new Setting(contentEl)
+      .setName("Slug")
+      .setDesc("将用于匹配远端 manifest")
+      .addText((text) => {
+        text.setPlaceholder("例如：hello-world")
+          .setValue(this.slugValue)
+          .onChange((value) => {
+            this.slugValue = value.trim();
+          });
+      });
+
+    const buttonRow = contentEl.createDiv({ cls: "love-linker-row" });
+    const confirmButton = buttonRow.createEl("button", { text: "确认" });
+    const cancelButton = buttonRow.createEl("button", { text: "取消" });
+
+    confirmButton.addEventListener("click", () => {
+      if (!this.slugValue) {
+        new Notice("slug 不能为空。", 3000);
+        return;
+      }
+      this.resolve(this.slugValue);
+    });
+    cancelButton.addEventListener("click", () => this.resolve(null));
+  }
+
+  onClose() {
+    if (!this.resolved) {
+      this.options.onSubmit(null);
+    }
+  }
+
+  private resolve(value: string | null) {
+    this.resolved = true;
+    this.options.onSubmit(value);
+    this.close();
+  }
+}
+
+export type UnpublishConfirmChoice = "confirm" | "cancel";
+
+export class UnpublishConfirmModal extends Modal {
+  private resolved = false;
+  private confirmButton?: HTMLButtonElement;
+  private slugInputValue = "";
+
+  constructor(
+    app: App,
+    private options: {
+      mode: "unpublish" | "delete";
+      slug: string;
+      file: string;
+      remotePath: string;
+      mismatchNote?: string;
+      onResolve: (choice: UnpublishConfirmChoice) => void;
+    }
+  ) {
+    super(app);
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+
+    if (this.options.mode === "delete") {
+      contentEl.createEl("h2", { text: "危险操作：彻底删除远端文章？" });
+      contentEl.createEl("p", {
+        text: "将从 manifest 移除并尝试删除远端文件，删除后可能无法恢复。"
+      });
+    } else {
+      contentEl.createEl("h2", { text: "确认下线文章？" });
+      contentEl.createEl("p", {
+        text: "下线后文章将从网站索引中移除，ISR 周期后网站无法访问，但不会删除远端文件。"
+      });
+    }
+
+    const info = contentEl.createEl("ul", { cls: "llp-list" });
+    info.createEl("li", { text: `slug: ${this.options.slug}` });
+    info.createEl("li", { text: `file: ${this.options.file}` });
+    info.createEl("li", { text: `远端路径: ${this.options.remotePath}` });
+
+    if (this.options.mismatchNote) {
+      contentEl.createDiv({ text: this.options.mismatchNote, cls: "llp-muted" });
+    }
+
+    if (this.options.mode === "delete") {
+      contentEl.createEl("p", { text: "请输入 slug 以确认删除操作。" });
+      new Setting(contentEl)
+        .setName("确认 slug")
+        .setDesc("输入与上方一致的 slug 才能继续")
+        .addText((text) => {
+          text.setPlaceholder(this.options.slug)
+            .setValue("")
+            .onChange((value) => {
+              this.slugInputValue = value.trim();
+              this.updateConfirmState();
+            });
+        });
+    }
+
+    const buttonRow = contentEl.createDiv({ cls: "love-linker-row" });
+    this.confirmButton = buttonRow.createEl("button", {
+      text: this.options.mode === "delete" ? "确认删除" : "确认下线"
+    });
+    const cancelButton = buttonRow.createEl("button", { text: "取消" });
+
+    if (this.options.mode === "delete") {
+      this.confirmButton.addClass("llp-button");
+      this.confirmButton.addClass("llp-button--danger");
+      this.confirmButton.disabled = true;
+    }
+
+    this.confirmButton.addEventListener("click", () => this.resolve("confirm"));
+    cancelButton.addEventListener("click", () => this.resolve("cancel"));
+  }
+
+  onClose() {
+    if (!this.resolved) {
+      this.options.onResolve("cancel");
+    }
+  }
+
+  private updateConfirmState() {
+    if (!this.confirmButton) return;
+    this.confirmButton.disabled = this.slugInputValue !== this.options.slug;
+  }
+
+  private resolve(choice: UnpublishConfirmChoice) {
     this.resolved = true;
     this.options.onResolve(choice);
     this.close();

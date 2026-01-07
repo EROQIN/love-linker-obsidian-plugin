@@ -97,6 +97,19 @@ export class LoveLinkerSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName("WEBDAV_TRASH_DIR")
+      .setDesc("彻底删除时的回收站目录名（相对 WEBDAV_CONTENT_DIR）")
+      .addText((text) =>
+        text
+          .setPlaceholder("_trash")
+          .setValue(this.plugin.settings.webdavTrashDir)
+          .onChange(async (value) => {
+            this.plugin.settings.webdavTrashDir = value.trim() || "_trash";
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
       .setName("LOCAL_CONTENT_FOLDER")
       .setDesc("Obsidian 本地保存文章的文件夹（相对 vault 根目录）")
       .addText((text) =>
@@ -161,6 +174,16 @@ export class LoveLinkerSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           })
       );
+
+    new Setting(containerEl)
+      .setName("启动时自动打开发布面板")
+      .setDesc("默认开启，可在右侧常驻显示")
+      .addToggle((toggle) => {
+        toggle.setValue(this.plugin.settings.autoOpenPanel).onChange(async (value) => {
+          this.plugin.settings.autoOpenPanel = value;
+          await this.plugin.saveSettings();
+        });
+      });
 
     new Setting(containerEl)
       .setName("测试连接")
