@@ -26,6 +26,10 @@
   font-size: 12px;
 }
 
+.llp-hidden {
+  display: none;
+}
+
 .love-linker-status {
   padding: 8px;
   background: var(--background-secondary);

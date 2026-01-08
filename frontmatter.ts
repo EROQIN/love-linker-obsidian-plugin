@@ -38,7 +38,7 @@ const escapeYamlString = (value: string) => {
 
 const buildYamlArray = (tags: string[]) => {
   if (!tags || tags.length === 0) return "[]";
-  const escaped = tags.map((tag) => `\"${escapeYamlString(tag)}\"`);
+  const escaped = tags.map((tag) => `"${escapeYamlString(tag)}"`);
   return `[${escaped.join(", ")}]`;
 };
 
@@ -54,14 +54,14 @@ export const buildFrontmatterTemplate = (data: FrontmatterData) => {
 
   return [
     "---",
-    `title: \"${title}\"`,
-    `date: \"${date}\"`,
-    `place: \"${place}\"`,
-    `accent: \"${accent}\"`,
-    `cover: \"${cover}\"`,
-    `excerpt: \"${excerpt}\"`,
+    `title: "${title}"`,
+    `date: "${date}"`,
+    `place: "${place}"`,
+    `accent: "${accent}"`,
+    `cover: "${cover}"`,
+    `excerpt: "${excerpt}"`,
     `tags: ${tags}`,
-    `visibility: \"${visibility}\"`,
+    `visibility: "${visibility}"`,
     "---",
     ""
   ].join("\n");

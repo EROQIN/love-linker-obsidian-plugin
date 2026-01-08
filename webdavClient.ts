@@ -1,4 +1,5 @@
 import { requestUrl } from "obsidian";
+import type { RequestUrlParam } from "obsidian";
 import type { LoveLinkerSettings } from "./types";
 
 export class WebDavError extends Error {
@@ -43,7 +44,7 @@ const encodeUtf8Bytes = (value: string) => {
 const encodeBase64 = (value: string) => {
   if (typeof btoa === "function") {
     return btoa(
-      encodeURIComponent(value).replace(/%([0-9A-F]{2})/g, (_, hex) =>
+      encodeURIComponent(value).replace(/%([0-9A-F]{2})/g, (_: string, hex: string) =>
         String.fromCharCode(parseInt(hex, 16))
       )
     );
@@ -64,7 +65,7 @@ const encodeBase64 = (value: string) => {
   return output;
 };
 
-type RequestParams = Parameters<typeof requestUrl>[0];
+type RequestParams = RequestUrlParam;
 
 const REQUEST_TIMEOUT_MS = 10000;
 
@@ -135,7 +136,7 @@ export class WebDavClient {
     const text = await this.getText(pathParts);
     try {
       return JSON.parse(text) as T;
-    } catch (error) {
+    } catch {
       throw new WebDavError("远端返回的 JSON 解析失败。", 0);
     }
   }

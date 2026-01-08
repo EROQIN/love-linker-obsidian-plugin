@@ -65,7 +65,7 @@ export class NewArticleModal extends Modal {
 
     new Setting(contentEl)
       .setName("日期")
-      .setDesc("格式 YYYY-MM-DD，默认今天")
+      .setDesc("格式 2024-01-01，默认今天")
       .addText((text) => {
         text.inputEl.type = "date";
         text.setValue(this.data.date).onChange((value) => {
@@ -110,7 +110,9 @@ export class NewArticleModal extends Modal {
         if (options.length === 0) {
           dropdown.addOption(this.options.defaultAccent, this.options.defaultAccent);
         }
-        options.forEach((option) => dropdown.addOption(option.value, option.label));
+        options.forEach((option) => {
+          dropdown.addOption(option.value, option.label);
+        });
         dropdown.setValue(this.data.accent).onChange((value) => {
           this.data.accent = value;
         });
@@ -120,7 +122,7 @@ export class NewArticleModal extends Modal {
       .setName("封面 (cover)")
       .setDesc("支持外链，例如 https://your-image-host/cover.svg")
       .addText((text) => {
-        text.setPlaceholder("https://...")
+        text.setPlaceholder("示例链接")
           .setValue(this.data.cover)
           .onChange((value) => {
             this.data.cover = value.trim();
@@ -152,7 +154,7 @@ export class NewArticleModal extends Modal {
 
     new Setting(contentEl)
       .setName("可见性 (visibility)")
-      .setDesc("public 将出现在首页，private 会默认隐藏")
+      .setDesc("公开将出现在首页，私密会默认隐藏")
       .addDropdown((dropdown) => {
         dropdown.addOption("public", "公开 / public");
         dropdown.addOption("private", "私密 / private");
@@ -168,11 +170,8 @@ export class NewArticleModal extends Modal {
     const createButton = buttonRow.createEl("button", { text: "创建文档" });
     const cancelButton = buttonRow.createEl("button", { text: "取消" });
 
-    createButton.addEventListener("click", async () => {
-      const result = await this.options.onSubmit(this.data);
-      if (result !== false) {
-        this.close();
-      }
+    createButton.addEventListener("click", () => {
+      void this.handleCreate();
     });
 
     cancelButton.addEventListener("click", () => this.close());
@@ -181,6 +180,13 @@ export class NewArticleModal extends Modal {
   private updateFileNamePreview() {
     if (!this.fileNamePreviewEl) return;
     this.fileNamePreviewEl.setText(`文件名预览：${this.resolveFileName()}`);
+  }
+
+  private async handleCreate() {
+    const result = await this.options.onSubmit(this.data);
+    if (result !== false) {
+      this.close();
+    }
   }
 
   private resolveFileName() {
@@ -354,13 +360,12 @@ export class SlugInputModal extends Modal {
       .addToggle((toggle) => {
         toggle.setValue(false).onChange((value) => {
           this.useCustomFileName = value;
-          advancedContainer.style.display = value ? "block" : "none";
+          advancedContainer.classList.toggle("llp-hidden", !value);
           updatePreview();
         });
       });
 
-    const advancedContainer = contentEl.createDiv({ cls: "love-linker-section" });
-    advancedContainer.style.display = "none";
+    const advancedContainer = contentEl.createDiv({ cls: "love-linker-section llp-hidden" });
 
     new Setting(advancedContainer)
       .setName("自定义远端文件名")
@@ -392,7 +397,7 @@ export class SlugInputModal extends Modal {
 
     submitButton.addEventListener("click", () => {
       if (!this.slugValue.trim()) {
-        new Notice("slug 不能为空。", 3000);
+        new Notice("文章标识不能为空。", 3000);
         return;
       }
       if (/[\\/]/.test(this.resolveFileName())) {
@@ -549,7 +554,9 @@ export class AccentSelectModal extends Modal {
         if (this.selected && !values.includes(this.selected)) {
           dropdown.addOption(this.selected, `${this.selected}（当前）`);
         }
-        options.forEach((option) => dropdown.addOption(option.value, option.label));
+        options.forEach((option) => {
+          dropdown.addOption(option.value, option.label);
+        });
         dropdown.setValue(this.selected || options[0]?.value || "").onChange((value) => {
           this.selected = value;
         });
@@ -607,7 +614,7 @@ export class SlugPromptModal extends Modal {
 
     confirmButton.addEventListener("click", () => {
       if (!this.slugValue) {
-        new Notice("slug 不能为空。", 3000);
+        new Notice("文章标识不能为空。", 3000);
         return;
       }
       this.resolve(this.slugValue);
@@ -661,7 +668,7 @@ export class UnpublishConfirmModal extends Modal {
     } else {
       contentEl.createEl("h2", { text: "确认下线文章？" });
       contentEl.createEl("p", {
-        text: "下线后文章将从网站索引中移除，ISR 周期后网站无法访问，但不会删除远端文件。"
+        text: "下线后文章将从网站索引中移除，站点刷新周期后无法访问，但不会删除远端文件。"
       });
     }
 

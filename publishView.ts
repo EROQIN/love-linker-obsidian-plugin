@@ -78,14 +78,14 @@ export class PublishPanelView extends ItemView {
   }
 
   getDisplayText() {
-    return "Love Linker 发布面板";
+    return "发布面板";
   }
 
   getIcon() {
     return "paper-plane";
   }
 
-  async onOpen() {
+  onOpen() {
     this.render();
   }
 
@@ -103,12 +103,12 @@ export class PublishPanelView extends ItemView {
     contentEl.addClass("llp-panel");
 
     const header = contentEl.createDiv({ cls: "llp-header" });
-    header.createEl("h2", { text: "Love Linker 发布" });
+    header.createEl("h2", { text: "发布面板" });
 
     const headerActions = header.createDiv({ cls: "llp-header-actions" });
     headerActions.createEl("button", { text: "刷新" }).addEventListener("click", () => {
-      this.refresh();
-      this.loadManifestPreview();
+      void this.refresh();
+      void this.loadManifestPreview();
     });
     headerActions.createEl("button", { text: "设置" }).addEventListener("click", () => {
       this.plugin.openSettings();
@@ -135,32 +135,35 @@ export class PublishPanelView extends ItemView {
     this.deleteButton = actionRow.createEl("button", { text: "彻底删除", cls: "llp-button llp-button--danger" });
 
     this.pushButton.addEventListener("click", () => {
-      this.plugin.pushCurrentFile({ progress: (message) => this.setStatusMessage(message) });
+      void this.plugin.pushCurrentFile({ progress: (message) => this.setStatusMessage(message) });
     });
     this.newButton.addEventListener("click", () => this.plugin.openNewArticleModal());
-    this.repairButton.addEventListener("click", () => this.plugin.repairCurrentFrontmatterWithPrompt());
-    this.accentButton.addEventListener("click", () => this.plugin.openAccentModal());
+    this.repairButton.addEventListener("click", () => {
+      void this.plugin.repairCurrentFrontmatterWithPrompt();
+    });
+    this.accentButton.addEventListener("click", () => {
+      void this.plugin.openAccentModal();
+    });
     this.unpublishButton.addEventListener("click", () => {
-      this.plugin.unpublishCurrentFile({ deleteRemote: false });
+      void this.plugin.unpublishCurrentFile({ deleteRemote: false });
     });
     this.deleteButton.addEventListener("click", () => {
-      this.plugin.unpublishCurrentFile({ deleteRemote: true });
+      void this.plugin.unpublishCurrentFile({ deleteRemote: true });
     });
 
     const remoteCard = contentEl.createDiv({ cls: "llp-card" });
-    remoteCard.createEl("h3", { text: "远端 WebDAV" });
+    remoteCard.createEl("h3", { text: "远端连接" });
 
     const remoteRow = remoteCard.createDiv({ cls: "llp-row" });
     this.remoteStatusBadgeEl = remoteRow.createSpan({ cls: "llp-badge" });
     this.remoteInfoEl = remoteCard.createDiv({ cls: "llp-muted" });
 
     const remoteActions = remoteCard.createDiv({ cls: "llp-actions" });
-    remoteActions.createEl("button", { text: "测试连接", cls: "llp-button" }).addEventListener("click", async () => {
-      const result = await this.plugin.testConnection({ silent: true });
-      this.setRemoteStatusFromCheck(result);
+    remoteActions.createEl("button", { text: "测试连接", cls: "llp-button" }).addEventListener("click", () => {
+      void this.handleTestConnection();
     });
-    remoteActions.createEl("button", { text: "读取 manifest", cls: "llp-button" }).addEventListener("click", () => {
-      this.loadManifestPreview();
+    remoteActions.createEl("button", { text: "读取清单", cls: "llp-button" }).addEventListener("click", () => {
+      void this.loadManifestPreview();
     });
 
     this.manifestStatusEl = remoteCard.createDiv({ cls: "llp-muted" });
@@ -169,7 +172,7 @@ export class PublishPanelView extends ItemView {
     this.manifestFilterEl = filterRow.createEl("input", {
       type: "text",
       cls: "llp-input",
-      placeholder: "搜索 slug..."
+      placeholder: "搜索标识..."
     });
     this.manifestFilterEl.addEventListener("input", () => this.renderManifestList());
 
@@ -196,7 +199,7 @@ export class PublishPanelView extends ItemView {
     const form = formCard.createDiv({ cls: "llp-form" });
 
     new Setting(form)
-      .setName("title")
+      .setName("标题")
       .setDesc("页面标题")
       .addText((text) => {
         this.formEls.title = text.inputEl;
@@ -204,8 +207,8 @@ export class PublishPanelView extends ItemView {
       });
 
     new Setting(form)
-      .setName("date")
-      .setDesc("格式 YYYY-MM-DD")
+      .setName("日期")
+      .setDesc("格式 2024-01-01")
       .addText((text) => {
         this.formEls.date = text.inputEl;
         text.inputEl.type = "date";
@@ -213,7 +216,7 @@ export class PublishPanelView extends ItemView {
       });
 
     new Setting(form)
-      .setName("place")
+      .setName("地点")
       .setDesc("可留空")
       .addText((text) => {
         this.formEls.place = text.inputEl;
@@ -221,19 +224,19 @@ export class PublishPanelView extends ItemView {
       });
 
     new Setting(form)
-      .setName("visibility")
-      .setDesc("public 将出现在首页")
+      .setName("可见性")
+      .setDesc("公开将出现在首页")
       .addDropdown((dropdown) => {
         this.formEls.visibility = dropdown.selectEl;
-        dropdown.addOption("public", "public");
-        dropdown.addOption("private", "private");
+        dropdown.addOption("public", "公开");
+        dropdown.addOption("private", "私密");
         dropdown.onChange((value: "public" | "private") => {
           this.updateFormState("visibility", value);
         });
       });
 
     new Setting(form)
-      .setName("accent")
+      .setName("主色")
       .setDesc("主色，来自调色板")
       .addDropdown((dropdown) => {
         this.formEls.accent = dropdown.selectEl;
@@ -242,16 +245,16 @@ export class PublishPanelView extends ItemView {
       });
 
     new Setting(form)
-      .setName("cover")
-      .setDesc("外链图床 URL")
+      .setName("封面链接")
+      .setDesc("外链图床地址")
       .addText((text) => {
         this.formEls.cover = text.inputEl;
-        text.setPlaceholder("https://...");
+        text.setPlaceholder("示例链接");
         text.onChange((value) => this.updateFormState("cover", value));
       });
 
     new Setting(form)
-      .setName("tags")
+      .setName("标签")
       .setDesc("逗号分隔")
       .addText((text) => {
         this.formEls.tags = text.inputEl;
@@ -260,7 +263,7 @@ export class PublishPanelView extends ItemView {
       });
 
     new Setting(form)
-      .setName("excerpt")
+      .setName("摘要")
       .setDesc("首页卡片文案")
       .addTextArea((textarea) => {
         this.formEls.excerpt = textarea.inputEl;
@@ -273,20 +276,12 @@ export class PublishPanelView extends ItemView {
       text: "保存到 frontmatter",
       cls: "llp-button llp-button--primary"
     });
-    this.formSaveButton.addEventListener("click", async () => {
-      const active = await this.plugin.getActiveFrontmatter();
-      if (!active.file) {
-        new Notice("请先打开一个 Markdown 文件。", 3000);
-        return;
-      }
-      await this.plugin.updateFrontmatterFromForm(active.file, this.formState);
-      this.formDirty = false;
-      new Notice("frontmatter 已保存。", 3000);
-      this.refresh();
+    this.formSaveButton.addEventListener("click", () => {
+      void this.handleFormSave();
     });
 
     this.resetPushProgress();
-    this.refresh();
+    void this.refresh();
   }
 
   scheduleRefresh() {
@@ -294,7 +289,7 @@ export class PublishPanelView extends ItemView {
       window.clearTimeout(this.refreshTimer);
     }
     this.refreshTimer = window.setTimeout(() => {
-      this.refresh();
+      void this.refresh();
     }, 250);
   }
 
@@ -377,16 +372,16 @@ export class PublishPanelView extends ItemView {
     const info = this.plugin.getRemoteInfo();
 
     if (!info.baseUrl || !this.plugin.hasWebdavConfig()) {
-      this.setRemoteStatus({ status: "unconfigured", message: "未配置 WebDAV" });
-      this.remoteInfoEl.setText("请先在设置中填写 Base URL / 用户名 / 密码。");
+      this.setRemoteStatus({ status: "unconfigured", message: "未配置远端连接" });
+      this.remoteInfoEl.setText("请先在设置中填写远端地址、用户名和密码。");
       if (this.manifestStatusEl) {
-        this.manifestStatusEl.setText("未配置 WebDAV，无法读取 manifest。");
+        this.manifestStatusEl.setText("未配置远端连接，无法读取清单。");
       }
       this.togglePushButton(false);
       return;
     }
 
-    this.remoteInfoEl.setText(`Base URL: ${info.baseUrl} · 目录: ${info.contentDir}`);
+    this.remoteInfoEl.setText(`远端地址: ${info.baseUrl} · 目录: ${info.contentDir}`);
     this.togglePushButton(true);
 
     if (this.remoteStatus.status === "unknown" || this.remoteStatus.status === "unconfigured") {
@@ -442,6 +437,23 @@ export class PublishPanelView extends ItemView {
     this.renderManifestList();
   }
 
+  private async handleTestConnection() {
+    const result = await this.plugin.testConnection({ silent: true });
+    this.setRemoteStatusFromCheck(result);
+  }
+
+  private async handleFormSave() {
+    const active = await this.plugin.getActiveFrontmatter();
+    if (!active.file) {
+      new Notice("请先打开一个 Markdown 文件。", 3000);
+      return;
+    }
+    await this.plugin.updateFrontmatterFromForm(active.file, this.formState);
+    this.formDirty = false;
+    new Notice("属性已保存。", 3000);
+    void this.refresh();
+  }
+
   private renderManifestList() {
     if (!this.manifestListEl) return;
     const filter = this.manifestFilterEl?.value.trim().toLowerCase() ?? "";
@@ -467,13 +479,13 @@ export class PublishPanelView extends ItemView {
       if (unpublish) {
         unpublish.disabled = this.actionBusy || !canRemote;
         unpublish.addEventListener("click", () => {
-          this.plugin.unpublishBySlug(item.slug, { deleteRemote: false, fileHint: item.file });
+          void this.plugin.unpublishBySlug(item.slug, { deleteRemote: false, fileHint: item.file });
         });
       }
       if (remove) {
         remove.disabled = this.actionBusy || !canRemote;
         remove.addEventListener("click", () => {
-          this.plugin.unpublishBySlug(item.slug, { deleteRemote: true, fileHint: item.file });
+          void this.plugin.unpublishBySlug(item.slug, { deleteRemote: true, fileHint: item.file });
         });
       }
     });
@@ -508,11 +520,16 @@ export class PublishPanelView extends ItemView {
     }
 
     const normalized = normalizeFrontmatter(active.data ?? {});
-    const tags = Array.isArray(active.data?.tags)
-      ? (active.data?.tags as unknown[]).map((tag) => String(tag)).join(", ")
-      : typeof active.data?.tags === "string"
-        ? active.data?.tags
-        : "";
+    const tagsValue = active.data?.tags;
+    let tags = "";
+    if (Array.isArray(tagsValue)) {
+      tags = tagsValue
+        .map((tag) => (typeof tag === "string" || typeof tag === "number" ? String(tag) : ""))
+        .filter((tag) => tag.length > 0)
+        .join(", ");
+    } else if (typeof tagsValue === "string") {
+      tags = tagsValue;
+    }
 
     this.applyFormState({
       title: normalized.title,
@@ -539,12 +556,12 @@ export class PublishPanelView extends ItemView {
     if (this.formEls.tags) this.formEls.tags.value = state.tags;
     if (this.formEls.excerpt) this.formEls.excerpt.value = state.excerpt;
 
-    if (this.formEls.visibility) {
-      (this.formEls.visibility as HTMLSelectElement).value = state.visibility;
+    if (this.formEls.visibility instanceof HTMLSelectElement) {
+      this.formEls.visibility.value = state.visibility;
     }
 
-    if (this.formEls.accent) {
-      const accentSelect = this.formEls.accent as HTMLSelectElement;
+    if (this.formEls.accent instanceof HTMLSelectElement) {
+      const accentSelect = this.formEls.accent;
       if (state.accent && !Array.from(accentSelect.options).some((option) => option.value === state.accent)) {
         const option = document.createElement("option");
         option.value = state.accent;
@@ -584,7 +601,7 @@ export class PublishPanelView extends ItemView {
     }
     if (kind === "manifest_missing") {
       this.remoteStatusBadgeEl.addClass("llp-badge--warn");
-      this.remoteStatusBadgeEl.setText("manifest 不存在");
+      this.remoteStatusBadgeEl.setText("清单不存在");
       return;
     }
     if (kind === "auth_failed") {

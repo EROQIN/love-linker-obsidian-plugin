@@ -42,7 +42,20 @@ import type { ManifestItem, ManifestPayload } from "./webdavTypes";
 export default class LoveLinkerPublisherPlugin extends Plugin {
   settings: LoveLinkerSettings = DEFAULT_SETTINGS;
   private webdav!: WebDavClient;
-  private publishView?: PublishPanelView;
+  private getPublishView() {
+    const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE)[0];
+    const view = leaf?.view;
+    return view instanceof PublishPanelView ? view : null;
+  }
+
+  private getTrimmedString(value: unknown) {
+    return typeof value === "string" ? value.trim() : "";
+  }
+
+  private toRecord(value: unknown) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    return value as Record<string, unknown>;
+  }
 
   async onload() {
     await this.loadSettings();
@@ -50,60 +63,71 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
 
     this.addSettingTab(new LoveLinkerSettingTab(this.app, this));
 
-    this.registerView(VIEW_TYPE, (leaf) => {
-      this.publishView = new PublishPanelView(leaf, this);
-      return this.publishView;
-    });
+    this.registerView(VIEW_TYPE, (leaf) => new PublishPanelView(leaf, this));
 
-    this.addRibbonIcon("paper-plane", "打开 Love Linker 发布面板", () => {
-      this.ensurePublishViewSingleInstance();
+    this.addRibbonIcon("paper-plane", "打开发布面板", () => {
+      void this.ensurePublishViewSingleInstance();
     });
 
     this.addCommand({
       id: "love-linker-open-panel",
       name: "打开发布面板",
-      callback: () => this.ensurePublishViewSingleInstance()
+      callback: () => {
+        void this.ensurePublishViewSingleInstance();
+      }
     });
 
     this.addCommand({
       id: "love-linker-new-article",
       name: "新建文章",
-      callback: () => this.openNewArticleModal()
+      callback: () => {
+        this.openNewArticleModal();
+      }
     });
 
     this.addCommand({
       id: "love-linker-push-current",
-      name: "推送/更新当前文档到 WebDAV",
-      callback: () => this.pushCurrentFile()
+      name: "推送/更新当前文档到远端",
+      callback: () => {
+        void this.pushCurrentFile();
+      }
     });
 
     this.addCommand({
       id: "love-linker-add-frontmatter",
       name: "补全/修复当前文档属性",
-      callback: () => this.repairCurrentFrontmatterWithPrompt()
+      callback: () => {
+        void this.repairCurrentFrontmatterWithPrompt();
+      }
     });
 
     this.addCommand({
       id: "love-linker-update-accent",
       name: "修改当前文档 accent",
-      callback: () => this.openAccentModal()
+      callback: () => {
+        void this.openAccentModal();
+      }
     });
 
     this.addCommand({
       id: "love-linker-unpublish-current",
       name: "下线当前文章（仅移除 manifest）",
-      callback: () => this.unpublishCurrentFile({ deleteRemote: false })
+      callback: () => {
+        void this.unpublishCurrentFile({ deleteRemote: false });
+      }
     });
 
     this.addCommand({
       id: "love-linker-delete-current",
       name: "彻底删除当前文章（移除 manifest + 删除远端文件）",
-      callback: () => this.unpublishCurrentFile({ deleteRemote: true })
+      callback: () => {
+        void this.unpublishCurrentFile({ deleteRemote: true });
+      }
     });
 
     this.app.workspace.onLayoutReady(() => {
       if (this.settings.autoOpenPanel) {
-        this.ensurePublishViewSingleInstance({ reveal: false });
+        void this.ensurePublishViewSingleInstance({ reveal: false });
       }
     });
 
@@ -112,9 +136,11 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
         if (file instanceof TFile && this.isMarkdownFile(file)) {
           menu.addItem((item) => {
             item
-              .setTitle("推送/更新到 WebDAV")
+              .setTitle("推送/更新到远端")
               .setIcon("paper-plane")
-              .onClick(() => this.pushCurrentFile({ file }));
+              .onClick(() => {
+                void this.pushCurrentFile({ file });
+              });
           });
         }
       })
@@ -122,13 +148,13 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
 
     this.registerEvent(
       this.app.workspace.on("active-leaf-change", () => {
-        this.publishView?.scheduleRefresh();
+        this.getPublishView()?.scheduleRefresh();
       })
     );
 
     this.registerEvent(
       this.app.workspace.on("file-open", () => {
-        this.publishView?.scheduleRefresh();
+        this.getPublishView()?.scheduleRefresh();
       })
     );
 
@@ -136,18 +162,15 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
       this.app.metadataCache.on("changed", (file) => {
         const active = this.app.workspace.getActiveFile();
         if (active && file.path === active.path) {
-          this.publishView?.scheduleRefresh();
+          this.getPublishView()?.scheduleRefresh();
         }
       })
     );
   }
 
-  onunload() {
-    this.app.workspace.detachLeavesOfType(VIEW_TYPE);
-  }
-
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const stored = (await this.loadData()) as Partial<LoveLinkerSettings> | null;
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, stored ?? {});
     if (this.settings.defaultExtension !== "md") {
       this.settings.defaultExtension = "md";
     }
@@ -161,7 +184,7 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
 
   async saveSettings() {
     await this.saveData(this.settings);
-    this.publishView?.refreshRemoteInfo();
+    this.getPublishView()?.refreshRemoteInfo();
   }
 
   getRemoteInfo() {
@@ -198,10 +221,10 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
 
     await leaf.setViewState({ type: VIEW_TYPE, active: true });
     if (options?.reveal !== false) {
-      this.app.workspace.revealLeaf(leaf);
+      void this.app.workspace.revealLeaf(leaf);
     }
-    this.publishView = leaf.view as PublishPanelView;
-    this.publishView?.refresh();
+    const view = leaf.view instanceof PublishPanelView ? leaf.view : null;
+    void view?.refresh();
   }
 
   openSettings() {
@@ -237,13 +260,13 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
     return options;
   }
 
-  async openNewArticleModal() {
+  openNewArticleModal() {
     const modal = new NewArticleModal(this.app, {
       accentOptions: this.getAccentOptions(),
       defaultAccent: this.settings.defaultAccent,
       defaultCover: this.settings.defaultCoverUrl,
       defaultExtension: this.settings.defaultExtension,
-      onSubmit: async (data) => this.createNewArticle(data)
+      onSubmit: (data) => this.createNewArticle(data)
     });
     modal.open();
   }
@@ -286,28 +309,29 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
     }
 
     new Notice("已创建新文档。", 3000);
-    this.publishView?.refreshFileStatus();
+    void this.getPublishView()?.refreshFileStatus();
     return true;
   }
 
   async pushCurrentFile(options?: { file?: TFile; progress?: (message: string) => void }) {
+    const view = this.getPublishView();
     const progress = options?.progress ?? (() => undefined);
     const report = (message: string) => {
       progress(message);
-      this.publishView?.setStatusMessage(message);
+      view?.setStatusMessage(message);
     };
     const file = options?.file ?? this.app.workspace.getActiveFile();
 
-    this.publishView?.resetPushProgress();
-    this.publishView?.setStepStatus("delete", "skipped", "推送不涉及删除");
+    view?.resetPushProgress();
+    view?.setStepStatus("delete", "skipped", "推送不涉及删除");
 
     if (!file || !this.isMarkdownFile(file)) {
       new Notice("请先打开一个 Markdown 文件。", 3000);
-      this.publishView?.setStepStatus("validate", "error", "未打开 Markdown 文件");
+      view?.setStepStatus("validate", "error", "未打开 Markdown 文件");
       return;
     }
 
-    this.publishView?.setStepStatus("validate", "running", "正在解析 frontmatter...");
+    view?.setStepStatus("validate", "running", "正在解析 frontmatter...");
     report("正在解析 frontmatter...");
 
     await this.saveFileIfOpen(file);
@@ -315,26 +339,26 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
     const raw = await this.app.vault.read(file);
     const parsed = await this.readFrontmatter(file, raw);
     if (!parsed.hasFrontmatter) {
-      new Notice("未检测到 frontmatter，请先创建 YAML 块。", 4000);
-      this.publishView?.setStepStatus("validate", "error", "未检测到 frontmatter");
-      report("frontmatter 缺失");
+      new Notice("未检测到属性区块，请先在文档开头添加属性区块。", 4000);
+      view?.setStepStatus("validate", "error", "未检测到属性区块");
+      report("属性区块缺失");
       return;
     }
     if (parsed.error || !parsed.data) {
-      new Notice("frontmatter 解析失败，请检查 YAML 格式。", 4000);
-      this.publishView?.setStepStatus("validate", "error", "YAML 解析失败");
-      report("frontmatter 解析失败");
+      new Notice("属性区块解析失败，请检查格式。", 4000);
+      view?.setStepStatus("validate", "error", "属性区块解析失败");
+      report("属性区块解析失败");
       return;
     }
 
     const validation = validateFrontmatter(parsed.data, this.getAccentOptions());
     if (!validation.ok) {
       new Notice(`校验失败：${validation.errors.join("；")}`, 5000);
-      this.publishView?.setStepStatus("validate", "error", validation.errors.join("；"));
+      view?.setStepStatus("validate", "error", validation.errors.join("；"));
       report("校验失败");
       return;
     }
-    this.publishView?.setStepStatus("validate", "success");
+    view?.setStepStatus("validate", "success");
 
     if (validation.warnings.length > 0) {
       new Notice(`提示：${validation.warnings.join("；")}`, 4000);
@@ -356,24 +380,24 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
       await this.saveFileIfOpen(file);
     }
 
-    this.publishView?.setStepStatus("manifest", "running", "正在确认远端目录...");
+    view?.setStepStatus("manifest", "running", "正在确认远端目录...");
     report("正在确认远端目录...");
     const folderReady = await this.ensureRemoteContentDir();
     if (!folderReady) {
-      this.publishView?.setStepStatus("manifest", "error", "远端目录创建失败");
+      view?.setStepStatus("manifest", "error", "远端目录创建失败");
       report("远端目录创建失败");
       return;
     }
 
-    this.publishView?.setStepStatus("manifest", "running", "正在拉取 manifest...");
+    view?.setStepStatus("manifest", "running", "正在拉取 manifest...");
     report("正在拉取 manifest...");
     const manifest = await this.fetchManifest();
     if (!manifest) {
-      this.publishView?.setStepStatus("manifest", "error", "读取 manifest 失败");
+      view?.setStepStatus("manifest", "error", "读取 manifest 失败");
       report("读取 manifest 失败");
       return;
     }
-    this.publishView?.setStepStatus("manifest", "success");
+    view?.setStepStatus("manifest", "success");
 
     const resolved = await this.applySlugToManifest(manifest.items, slugResult, extension);
     if (!resolved) return;
@@ -384,7 +408,7 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
     let fileUploaded = false;
 
     if (!slugResult.manifestOnly) {
-      this.publishView?.setStepStatus("upload", "running", "正在上传文档...");
+      view?.setStepStatus("upload", "running", "正在上传文档...");
       report("正在上传文档...");
       try {
         const latest = await this.app.vault.read(file);
@@ -394,20 +418,20 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
           "text/markdown; charset=utf-8"
         );
         fileUploaded = true;
-        this.publishView?.setStepStatus("upload", "success");
+        view?.setStepStatus("upload", "success");
         new Notice("文档已上传。", 3000);
       } catch (error) {
         new Notice(this.formatWebDavError(error, "上传文档"), 5000);
-        this.publishView?.setStepStatus("upload", "error", this.formatWebDavError(error, "上传文档"));
+        view?.setStepStatus("upload", "error", this.formatWebDavError(error, "上传文档"));
         report("上传文档失败");
         return;
       }
     } else {
-      this.publishView?.setStepStatus("upload", "skipped", "仅更新 manifest");
+      view?.setStepStatus("upload", "skipped", "仅更新 manifest");
       report("已跳过文档上传（仅更新 manifest）");
     }
 
-    this.publishView?.setStepStatus("update", "running", "正在更新 manifest...");
+    view?.setStepStatus("update", "running", "正在更新 manifest...");
     report("正在更新 manifest...");
     try {
       await this.webdav.putText(
@@ -415,8 +439,8 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
         manifestText,
         "application/json; charset=utf-8"
       );
-      this.publishView?.setStepStatus("update", "success");
-      new Notice("manifest 已更新，网站将在 ISR 周期内自动刷新。", 4000);
+      view?.setStepStatus("update", "success");
+      new Notice("清单已更新，网站将在刷新周期内自动更新。", 4000);
     } catch (error) {
       if (fileUploaded) {
         new Notice(
@@ -426,7 +450,7 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
       } else {
         new Notice(this.formatWebDavError(error, "更新 manifest"), 5000);
       }
-      this.publishView?.setStepStatus("update", "error", this.formatWebDavError(error, "更新 manifest"));
+      view?.setStepStatus("update", "error", this.formatWebDavError(error, "更新 manifest"));
       report("更新 manifest 失败");
       return;
     }
@@ -436,7 +460,7 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
     await this.saveFileIfOpen(file);
 
     report("推送/更新完成");
-    this.publishView?.loadManifestPreview();
+    void view?.loadManifestPreview();
   }
 
   async testConnection(options?: { silent?: boolean }) {
@@ -540,7 +564,11 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
     return { file, hasFrontmatter: true, validation };
   }
 
-  async getActiveFrontmatter() {
+  async getActiveFrontmatter(): Promise<{
+    file: TFile | null;
+    data: Record<string, unknown> | null;
+    hasFrontmatter: boolean;
+  }> {
     const file = this.app.workspace.getActiveFile();
     if (!file || !this.isMarkdownFile(file)) {
       return { file: null, data: null as Record<string, unknown> | null, hasFrontmatter: false };
@@ -569,8 +597,11 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
     }
   }
 
-  private async readFrontmatter(file: TFile, raw?: string) {
-    const cached = this.app.metadataCache.getFileCache(file)?.frontmatter;
+  private async readFrontmatter(
+    file: TFile,
+    raw?: string
+  ): Promise<{ data: Record<string, unknown> | null; hasFrontmatter: boolean; error?: unknown }> {
+    const cached = this.toRecord(this.app.metadataCache.getFileCache(file)?.frontmatter);
     if (cached && Object.keys(cached).length > 0) {
       return { data: cached, hasFrontmatter: true, error: null as unknown };
     }
@@ -591,7 +622,7 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
   }
 
   private suggestSlug(file: TFile, frontmatter: Record<string, unknown>) {
-    const frontmatterSlug = frontmatter.slug ? String(frontmatter.slug).trim() : "";
+    const frontmatterSlug = this.getTrimmedString(frontmatter.slug);
     if (frontmatterSlug) {
       return frontmatterSlug;
     }
@@ -599,16 +630,16 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
     if (base && base !== file.basename) {
       return slugify(base);
     }
-    const title = frontmatter.title ? String(frontmatter.title) : "";
+    const title = this.getTrimmedString(frontmatter.title);
     return slugify(title || base);
   }
 
   private suggestUnpublishSlug(file: TFile, frontmatter: Record<string, unknown>) {
-    const frontmatterSlug = frontmatter.slug ? String(frontmatter.slug).trim() : "";
+    const frontmatterSlug = this.getTrimmedString(frontmatter.slug);
     if (frontmatterSlug) return frontmatterSlug;
     const base = suggestSlugFromFilename(file.basename);
     if (base && base !== file.basename) return slugify(base);
-    const title = frontmatter.title ? String(frontmatter.title) : "";
+    const title = this.getTrimmedString(frontmatter.title);
     if (title) return slugify(title);
     return "";
   }
@@ -714,11 +745,11 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
   private normalizeManifestItems(items: ManifestItem[] | undefined): ManifestItem[] {
     if (!Array.isArray(items)) return [];
     return items
-      .map((item) => ({
-        ...item,
-        slug: String(item.slug ?? "").trim(),
-        file: String(item.file ?? "").trim()
-      }))
+      .map((item) => {
+        const slug = typeof item.slug === "string" ? item.slug.trim() : "";
+        const file = typeof item.file === "string" ? item.file.trim() : "";
+        return { ...item, slug, file };
+      })
       .filter((item) => item.slug && item.file)
       .sort((a, b) => a.slug.localeCompare(b.slug));
   }
@@ -758,13 +789,13 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
   }
 
   private async updateVisibility(file: TFile, visibility: "public" | "private") {
-    await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+    await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
       frontmatter.visibility = visibility;
     });
   }
 
   private async updateSlug(file: TFile, slug: string) {
-    await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+    await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
       frontmatter.slug = slug;
     });
   }
@@ -838,7 +869,7 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
       changes.push({ key: "tags", label: "tags", value: "", note: "未设置，将写入空数组" });
     }
 
-    const visibilityValue = String(frontmatter.visibility ?? "").trim();
+    const visibilityValue = this.getTrimmedString(frontmatter.visibility);
     if (!visibilityValue || (visibilityValue !== "public" && visibilityValue !== "private")) {
       values.visibility = "public";
       changes.push({
@@ -849,7 +880,7 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
       });
     }
 
-    const accentValue = String(frontmatter.accent ?? "").trim();
+    const accentValue = this.getTrimmedString(frontmatter.accent);
     if (!accentValue) {
       const accent = this.settings.defaultAccent || this.getAccentOptions()[0]?.value || "";
       values.accent = accent;
@@ -868,22 +899,31 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
 
     const modal = new FrontmatterRepairModal(this.app, {
       changes,
-      onResolve: async (choice, updatedValues) => {
-        if (choice !== "confirm") return;
-        await this.app.fileManager.processFrontMatter(file, (fm) => {
-          if (values.title !== undefined) fm.title = updatedValues.title ?? values.title;
-          if (values.date !== undefined) fm.date = updatedValues.date ?? values.date;
-          if (values.excerpt !== undefined) fm.excerpt = updatedValues.excerpt ?? values.excerpt;
-          if (values.visibility !== undefined) fm.visibility = values.visibility;
-          if (values.accent !== undefined) fm.accent = values.accent;
-          if (values.tags !== undefined) fm.tags = parseTagsInput(updatedValues.tags ?? values.tags);
-        });
-        await this.saveFileIfOpen(file);
-        new Notice("已补全/修复 frontmatter。", 3000);
-        this.publishView?.refresh();
+      onResolve: (choice, updatedValues) => {
+        void this.applyFrontmatterRepair(file, values, updatedValues, choice);
       }
     });
     modal.open();
+  }
+
+  private async applyFrontmatterRepair(
+    file: TFile,
+    values: Record<string, string>,
+    updatedValues: Record<string, string>,
+    choice: "confirm" | "cancel"
+  ) {
+    if (choice !== "confirm") return;
+    await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
+      if (values.title !== undefined) fm.title = updatedValues.title ?? values.title;
+      if (values.date !== undefined) fm.date = updatedValues.date ?? values.date;
+      if (values.excerpt !== undefined) fm.excerpt = updatedValues.excerpt ?? values.excerpt;
+      if (values.visibility !== undefined) fm.visibility = values.visibility;
+      if (values.accent !== undefined) fm.accent = values.accent;
+      if (values.tags !== undefined) fm.tags = parseTagsInput(updatedValues.tags ?? values.tags);
+    });
+    await this.saveFileIfOpen(file);
+    new Notice("已补全/修复 frontmatter。", 3000);
+    void this.getPublishView()?.refresh();
   }
 
   async openAccentModal(file?: TFile) {
@@ -894,25 +934,29 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
     }
 
     const parsed = await this.readFrontmatter(target);
-    const currentAccent = parsed.data?.accent ? String(parsed.data.accent).trim() : "";
+    const currentAccent = this.getTrimmedString(parsed.data?.accent);
 
     const modal = new AccentSelectModal(this.app, {
       options: this.getAccentOptions(),
       current: currentAccent,
-      onSubmit: async (value) => {
-        await this.app.fileManager.processFrontMatter(target, (frontmatter) => {
-          frontmatter.accent = value;
-        });
-        await this.saveFileIfOpen(target);
-        new Notice("accent 已更新。", 3000);
-        this.publishView?.refresh();
+      onSubmit: (value) => {
+        void this.applyAccentUpdate(target, value);
       }
     });
     modal.open();
   }
 
+  private async applyAccentUpdate(file: TFile, value: string) {
+    await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
+      frontmatter.accent = value;
+    });
+    await this.saveFileIfOpen(file);
+    new Notice("主色已更新。", 3000);
+    void this.getPublishView()?.refresh();
+  }
+
   async updateFrontmatterFromForm(file: TFile, data: FrontmatterEditState) {
-    await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+    await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
       frontmatter.title = data.title.trim();
       frontmatter.date = data.date.trim();
       frontmatter.place = data.place.trim();
@@ -949,36 +993,37 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
     options: { deleteRemote: boolean; fileHint?: string; sourceFile?: TFile }
   ) {
     if (!this.hasWebdavConfig()) {
-      new Notice("未配置 WebDAV，请先在设置中填写。", 4000);
+      new Notice("未配置远端连接，请先在设置中填写。", 4000);
       return;
     }
 
-    this.publishView?.setActionBusy(true);
-    this.publishView?.resetPushProgress();
-    this.publishView?.setStepStatus("validate", "skipped", "下线操作");
-    this.publishView?.setStepStatus("upload", "skipped", "无上传");
+    const view = this.getPublishView();
+    view?.setActionBusy(true);
+    view?.resetPushProgress();
+    view?.setStepStatus("validate", "skipped", "下线操作");
+    view?.setStepStatus("upload", "skipped", "无上传");
     if (!options.deleteRemote) {
-      this.publishView?.setStepStatus("delete", "skipped", "仅下线");
+      view?.setStepStatus("delete", "skipped", "仅下线");
     }
 
     try {
-      this.publishView?.setStepStatus("manifest", "running", "拉取 manifest...");
-      this.publishView?.setStatusMessage("正在拉取 manifest...");
+      view?.setStepStatus("manifest", "running", "拉取 manifest...");
+      view?.setStatusMessage("正在拉取 manifest...");
       const manifest = await this.fetchManifestForUnpublish();
       if (!manifest) {
-        this.publishView?.setStepStatus("manifest", "error", "读取 manifest 失败");
+        view?.setStepStatus("manifest", "error", "读取 manifest 失败");
         return;
       }
 
       const target = manifest.items.find((item) => item.slug === slug);
       if (!target) {
         new Notice("远端 manifest 未包含该 slug，可能从未发布或已下线。", 4000);
-        this.publishView?.setStepStatus("manifest", "success");
-        this.publishView?.setStatusMessage("未找到 slug");
+        view?.setStepStatus("manifest", "success");
+        view?.setStatusMessage("未找到 slug");
         return;
       }
 
-      this.publishView?.setStepStatus("manifest", "success");
+      view?.setStepStatus("manifest", "success");
 
       const localFileName = options.sourceFile
         ? `${options.sourceFile.basename}.${options.sourceFile.extension}`
@@ -998,49 +1043,49 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
       });
 
       if (confirm !== "confirm") {
-        this.publishView?.setStatusMessage("已取消操作");
+        view?.setStatusMessage("已取消操作");
         return;
       }
 
       const updatedItems = manifest.items.filter((item) => item.slug !== slug);
       const manifestText = JSON.stringify({ items: updatedItems }, null, 2) + "\n";
 
-      this.publishView?.setStepStatus("update", "running", "更新 manifest...");
-      this.publishView?.setStatusMessage("正在更新 manifest...");
+      view?.setStepStatus("update", "running", "更新 manifest...");
+      view?.setStatusMessage("正在更新 manifest...");
       try {
         await this.webdav.putText(
           [this.settings.webdavContentDir, this.settings.webdavManifestFile],
           manifestText,
           "application/json; charset=utf-8"
         );
-        this.publishView?.setStepStatus("update", "success");
+        view?.setStepStatus("update", "success");
       } catch (error) {
         new Notice(this.formatWebDavError(error, "更新 manifest"), 5000);
-        this.publishView?.setStepStatus("update", "error", this.formatWebDavError(error, "更新 manifest"));
+        view?.setStepStatus("update", "error", this.formatWebDavError(error, "更新 manifest"));
         return;
       }
 
       if (options.deleteRemote) {
-        this.publishView?.setStepStatus("delete", "running", "删除/移动远端文件...");
-        this.publishView?.setStatusMessage("正在删除/移动远端文件...");
+        view?.setStepStatus("delete", "running", "删除/移动远端文件...");
+        view?.setStatusMessage("正在删除/移动远端文件...");
         const deleteResult = await this.deleteOrMoveRemoteFile(target.file);
         if (deleteResult.ok) {
-          this.publishView?.setStepStatus("delete", "success", deleteResult.message);
+          view?.setStepStatus("delete", "success", deleteResult.message);
         } else {
-          this.publishView?.setStepStatus("delete", "error", deleteResult.message);
+          view?.setStepStatus("delete", "error", deleteResult.message);
           new Notice(deleteResult.message, 5000);
         }
-        this.publishView?.setStatusMessage("下线/删除完成");
-        new Notice("已完成下线（网站将在 ISR 周期内更新）。", 4000);
+        view?.setStatusMessage("下线/删除完成");
+        new Notice("已完成下线（网站将在刷新周期内更新）。", 4000);
       } else {
-        this.publishView?.setStatusMessage("下线完成");
-        new Notice("已下线（网站将在 ISR 周期内更新）。", 4000);
+        view?.setStatusMessage("下线完成");
+        new Notice("已下线（网站将在刷新周期内更新）。", 4000);
       }
 
-      this.publishView?.loadManifestPreview();
-      this.publishView?.refreshFileStatus();
+      void view?.loadManifestPreview();
+      void view?.refreshFileStatus();
     } finally {
-      this.publishView?.setActionBusy(false);
+      view?.setActionBusy(false);
     }
   }
 

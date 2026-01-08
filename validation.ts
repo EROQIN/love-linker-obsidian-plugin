@@ -6,16 +6,25 @@ const isNonEmptyString = (value: unknown): value is string =>
 
 const isHexColor = (value: string) => /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(value);
 
+const toStringValue = (value: unknown) => (typeof value === "string" ? value : "");
+const toOptionalString = (value: unknown) => (typeof value === "string" ? value : undefined);
+
 export const normalizeFrontmatter = (data: Record<string, unknown>): FrontmatterData => {
+  const tags = Array.isArray(data.tags)
+    ? data.tags
+        .map((tag) => (typeof tag === "string" || typeof tag === "number" ? String(tag) : ""))
+        .filter((tag) => tag.length > 0)
+    : undefined;
+
   return {
-    title: String(data.title ?? ""),
-    date: String(data.date ?? ""),
-    excerpt: String(data.excerpt ?? ""),
-    place: data.place ? String(data.place) : undefined,
-    cover: data.cover ? String(data.cover) : undefined,
-    accent: data.accent ? String(data.accent) : undefined,
-    tags: Array.isArray(data.tags) ? data.tags.map((tag) => String(tag)) : undefined,
-    visibility: data.visibility ? String(data.visibility) : undefined
+    title: toStringValue(data.title),
+    date: toStringValue(data.date),
+    excerpt: toStringValue(data.excerpt),
+    place: toOptionalString(data.place),
+    cover: toOptionalString(data.cover),
+    accent: toOptionalString(data.accent),
+    tags,
+    visibility: toOptionalString(data.visibility)
   };
 };
 

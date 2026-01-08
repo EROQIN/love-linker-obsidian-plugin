@@ -27,7 +27,7 @@ export type FrontmatterData = {
   cover?: string;
   accent?: string;
   tags?: string[];
-  visibility?: "public" | "private" | string;
+  visibility?: string;
 };
 
 export type ValidationResult = {
