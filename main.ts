@@ -52,6 +52,59 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
     return typeof value === "string" ? value.trim() : "";
   }
 
+  private normalizeFrontmatterDate(frontmatter: Record<string, unknown>) {
+    const value = frontmatter.date;
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      frontmatter.date = formatDate(value);
+      return;
+    }
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (isValidDate(trimmed)) {
+        frontmatter.date = trimmed;
+        return;
+      }
+      const parsed = new Date(trimmed);
+      if (!Number.isNaN(parsed.getTime())) {
+        frontmatter.date = formatDate(parsed);
+      }
+    }
+  }
+
+  private normalizeUploadContent(content: string) {
+    const match = content.match(/^---\s*\n([\s\S]*?)\n---\s*(\n|$)/);
+    if (!match) return content;
+
+    const lines = match[1].split("\n");
+    let changed = false;
+
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i];
+      const dateMatch = line.match(/^date:\s*(.+)$/);
+      if (!dateMatch) continue;
+
+      const raw = dateMatch[1].trim();
+      if (!raw || raw.startsWith("\"") || raw.startsWith("'")) break;
+
+      const clean = raw.replace(/#.*$/, "").trim();
+      if (isValidDate(clean)) {
+        lines[i] = `date: "${clean}"`;
+        changed = true;
+        break;
+      }
+
+      const parsed = new Date(clean);
+      if (!Number.isNaN(parsed.getTime())) {
+        lines[i] = `date: "${formatDate(parsed)}"`;
+        changed = true;
+        break;
+      }
+    }
+
+    if (!changed) return content;
+    return content.replace(match[1], lines.join("\n"));
+  }
+
   private toRecord(value: unknown) {
     if (!value || typeof value !== "object" || Array.isArray(value)) return null;
     return value as Record<string, unknown>;
@@ -412,9 +465,10 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
       report("正在上传文档...");
       try {
         const latest = await this.app.vault.read(file);
+        const uploadContent = this.normalizeUploadContent(latest);
         await this.webdav.putText(
           [this.settings.webdavContentDir, slugResult.fileName],
-          latest,
+          uploadContent,
           "text/markdown; charset=utf-8"
         );
         fileUploaded = true;
@@ -790,12 +844,14 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
 
   private async updateVisibility(file: TFile, visibility: "public" | "private") {
     await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
+      this.normalizeFrontmatterDate(frontmatter);
       frontmatter.visibility = visibility;
     });
   }
 
   private async updateSlug(file: TFile, slug: string) {
     await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
+      this.normalizeFrontmatterDate(frontmatter);
       frontmatter.slug = slug;
     });
   }
@@ -914,6 +970,7 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
   ) {
     if (choice !== "confirm") return;
     await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
+      this.normalizeFrontmatterDate(fm);
       if (values.title !== undefined) fm.title = updatedValues.title ?? values.title;
       if (values.date !== undefined) fm.date = updatedValues.date ?? values.date;
       if (values.excerpt !== undefined) fm.excerpt = updatedValues.excerpt ?? values.excerpt;
@@ -948,6 +1005,7 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
 
   private async applyAccentUpdate(file: TFile, value: string) {
     await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
+      this.normalizeFrontmatterDate(frontmatter);
       frontmatter.accent = value;
     });
     await this.saveFileIfOpen(file);
@@ -957,6 +1015,7 @@ export default class LoveLinkerPublisherPlugin extends Plugin {
 
   async updateFrontmatterFromForm(file: TFile, data: FrontmatterEditState) {
     await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
+      this.normalizeFrontmatterDate(frontmatter);
       frontmatter.title = data.title.trim();
       frontmatter.date = data.date.trim();
       frontmatter.place = data.place.trim();
